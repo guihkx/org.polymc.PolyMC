@@ -1,0 +1,54 @@
+name: Flatpak
+on:
+  push:
+    branches:
+      - ci
+  pull_request:
+    branches:
+      - ci
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: mikefarah/yq@master
+
+      - name: Set up variables
+        env:
+          TZ: America/Sao_Paulo
+        run: |
+          current_version=$(yq '.modules[].sources[] | select(.url == "*/PolyMC.git").tag' '${{ github.event.repository.name }}.yml')
+          echo "VERSION=$current_version" >> $GITHUB_ENV
+          echo "ARTIFACT_NAME=PolyMC-Offline_v${current_version}-b$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Dump version
+        run: |
+          echo '${{ env.VERSION }}'
+
+      - name: Dump artifact name
+        run: |
+          echo '${{ env.ARTIFACT_NAME }}'
+
+      - name: Install dependencies
+        run: |
+          sudo apt update && sudo apt install -y flatpak-builder
+
+      - name: Set up Flatpak
+        run: |
+          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build (x86_64)
+        run: |
+          flatpak-builder --user --arch=x86_64 --force-clean --install-deps-from=flathub --repo=repo/ --sandbox build/ '${{ github.event.repository.name }}.yml'
+
+      - name: Bundle (x86_64)
+        run: |
+          flatpak build-bundle --arch=x86_64 repo/ '${{ env.ARTIFACT_NAME }}-x86_64.flatpak' '${{ github.event.repository.name }}' master
+
+      - name: Upload (x86_64)
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.ARTIFACT_NAME }}-x86_64.flatpak
+          path: |
+            ${{ env.ARTIFACT_NAME }}-x86_64.flatpak
